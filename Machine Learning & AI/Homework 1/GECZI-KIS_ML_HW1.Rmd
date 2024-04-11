@@ -1,0 +1,148 @@
+---
+title: "Machine Learning Homework 1"
+author: "Geczi-Kis Georgian"
+date: "2024-03-09"
+output: html_document
+---
+# Homework 1: Familiarizing with R, Plotly, and model validation
+
+The attached dataset contains observations about AirQuality in New York. The data is already split in training and test set. 
+
+Your task is:
+
+## Import dataset into R
+```{r}
+if (rstudioapi::isAvailable())
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+library(data.table)
+library(plotly)
+library(caret)
+
+
+train_data <- read.csv("data/airquality.training.csv")
+test_data <- read.csv("data/airquality.test.csv")
+```
+
+## Explore the data (number of observations? Are there NAs? Distribution training vs. test in %?). If there are NAs, remove observations.
+```{r}
+head(train_data) # we visualise the first rows from our train data
+str(train_data)
+dim(train_data) # it has 122 rows and 6 columns
+dim(test_data) # test dataset has 31 rows
+str(train_data)
+
+na_train <- sum(is.na(train_data))
+na_train # there are 34 NA values in our train data
+
+na_test <- sum(is.na(test_data))
+na_test # there are 10 Na values in test data
+
+# distribution of the whole dataset into train and test
+whole_data <- nrow(rbind(train_data, test_data))
+print(paste("The ration Train/Test is aproximatelly", round(nrow(train_data)/whole_data*100), "/", round(nrow(test_data)/whole_data*100))) # 80/20
+
+```
+
+```{r}
+# let's get rid of NA values
+train_data <- na.omit(train_data)
+test_data <- na.omit(test_data)
+dim(train_data) # now train dataset has only 90 rows, from 122
+dim(test_data) # test dataset has 21 rows, from 31
+```
+
+## Use plotly to display descriptive plots about the data (e.g., scatter plots Ozone vs. rest, boxplots of all variables, evolution over time, ...).
+```{r}
+# check for correlation, then visualise it
+cor(train_data[,1:4]) 
+# Ozone and Temperature have a very strong positive correlation (0.72)
+# Ozone and Wind have a normal negative correlation (-0.59)
+# Ozone and Solar Radiation have a weak positive correlation (0.35)
+
+a <- plot_ly(train_data, x = ~Wind, y = ~Ozone, type = "scatter", mode = "markers", name = "Wind vs. Ozone") # kind of a negative correlation
+b <- plot_ly(train_data, x = ~Solar.R, y = ~Ozone, type = "scatter", mode = "markers", name = "Solar Radiation vs. Ozone") # not really a thing here
+c <- plot_ly(train_data, x = ~Temp, y = ~Ozone, type = "scatter", mode = "markers", name = "Temperature vs. Ozone") # a slighty positive correlation
+subplot(a,b,c, nrows = 2, titleY = T, margin = 0.05)
+
+
+```
+
+```{r}
+# some bloxplots with the variables
+box <- plot_ly(data = train_data, y= ~Ozone, type = "box", name = "Ozone")
+box <- box %>% add_trace(data = train_data, y = ~ Solar.R, name = "Solar Radiation")
+box <- box %>% add_trace(data = train_data, y = ~ Wind, name = "Wind")
+box <- box %>% add_trace(data = train_data, y = ~ Temp, name = "Temperature")
+box
+
+# Solar Radiation has a wide range of values, and Ozone has 2 outliers
+```
+
+```{r}
+# evolution over time
+train_data$Date <- as.Date(paste("2000", train_data$Month, train_data$Day, sep = "-"))
+test_data$Date <- as.Date(paste("2000", test_data$Month, test_data$Day, sep = "-"))
+
+# plot the data
+plot <- plot_ly() %>%
+  add_lines(data = train_data, x = ~Date, y = ~Ozone, name = "Training Data", line = list(color = 'blue')) %>%
+  add_lines(data = test_data, x = ~Date, y = ~Ozone, name = "Test Data", line = list(color = 'red')) %>%
+  layout(title = "Ozone Levels Over Time",
+         xaxis = list(title = "Month-Day"),
+         yaxis = list(title = "Ozone Levels"))
+
+plot
+```
+
+The goal is to train a regression model that predicts Ozone based on Wind, Solar.R and Temp. 
+Do not use the variables Month and Day. In particular:
+
+# Train increasingly complex regression models (e.g. by increasing the degree of the polynomial from 1 to 5)
+
+```{r}
+# create the polynomial regression for multiple degrees values (1 to 5)
+poly_regr <- list()
+RMSE_train <- numeric(5)
+training.actuals <- train_data$Ozone
+
+for (i in 1:5) {
+  poly_regr[[i]] <- lm(Ozone ~ poly(Wind, Solar.R, Temp, degree), data = train_data) # we create a polynomial regression for each degree
+  training.predictions <- poly_regr[[i]]$fitted.values # we predict the values for the training data
+  RMSE_train[[i]] <- RMSE(training.predictions, training.actuals) # we calculate the RMSE for each degree
+}
+
+plot_ly(x = 1:5, y = RMSE_train, type = 'scatter', mode = 'line') %>% layout(title = 'RMSE for different degrees', xaxis = list(title = 'Degree'), yaxis = list(title = 'RMSE'))
+# we plot the RMSE for each degree
+```
+
+# Evaluate the models both on the training and test set using the Root Mean Squared Error (RMSE).
+
+```{r}
+# now we can compare training and test data 
+RMSE_test <- numeric(5)
+test.actuals <- test_data$Ozone
+# we will use also the variables and the regression from the previous snippet chunk, so we will not repeat them
+
+for (i in 1:5) {
+  test.predictions <- predict(poly_regr[[i]], test_data[, c("Wind", "Solar.R", "Temp")])
+  RMSE_test[[i]] <- RMSE(test.predictions, test.actuals)
+}
+
+```
+
+# Show how more complex models overfit, by plotting the RMSE curves on the training and on the test set.
+
+```{r}
+plot_ly(x = 1:5, y = RMSE_train, type = 'scatter', mode = 'line', name = 'Training') %>% 
+  add_trace(x = 1:5, y = RMSE_test, mode = 'line', name = 'Test') %>% 
+  layout(title = 'RMSE for different degrees', xaxis = list(title = 'Degree'), yaxis = list(title = 'RMSE'))
+```
+
+# Which degree would you choose?
+
+Based on the plot that includes the RMSE for training and testing data, the best degree would be 3. It has the lowest RMSE while the RMSE values being the closest, and with less complexity. I am thinking that at value 5 the model is still not overfitting, with smaller RMSE values, but it has a big complexity, so I would choose 3. 
+
+The other thing is that, for some reason, my final plot is not similar to the one that my colleague showed on the last lecture, where the RMSE for the test data was smaller that train data. 
+
+I looked over the code and I couldn't find any mistake, so I am not sure what is happening. A feedback on this matter would be appreciated. 
